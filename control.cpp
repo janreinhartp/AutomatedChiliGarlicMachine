@@ -1,98 +1,136 @@
-#include "control.h"
+#include "Control.h"
 
-void RunRelay::Run(){
-  // check to see if it's time to change the state of the LED
-  unsigned long currentMillisecond = millis();
-  if( currentMillisecond - previousMillisecond <= onTime)
-  {
-    if (runState != 1)
-    {
-      this->RunRelayOn();  
-      secRemaining = ((onTime-(currentMillisecond - previousMillisecond))/1000);
-      state = true;
-    }else{
-      this->RunRelayOff();
+Control::Control(int relayPin, int vfdPin, int pwmPin){
+    _relay = relayPin;
+    _vfd = vfdPin;
+    _pwm = pwmPin;
+    pinMode(_relay, OUTPUT);
+    digitalWrite(_relay, HIGH);
+    pinMode(_vfd, OUTPUT);
+    digitalWrite(_vfd, HIGH);
+    pinMode(_vfdSpeed, OUTPUT);
+    _previousMillis = 0;
+    _currentCountTime = 0;
+    _countTime = 0;
+    _isCounterCompleted = false;
+    _isStopped = true;
+    _startCountTime = 0;
+    _motorState = false;
+}
+
+Control::~Control(){
+
+}
+
+void Control::setTimer(String time){
+    hours = atoi (time.substring(0,2).c_str());
+    minutes = atoi (time.substring(2,4).c_str());
+    seconds = atoi (time.substring(4,6).c_str());
+
+    if (hours > COUNTIMER_MAX_HOURS) {
+    hours = COUNTIMER_MAX_HOURS;
     }
+
+    if (minutes > COUNTIMER_MAX_MINUTES_SECONDS) {
+        minutes = COUNTIMER_MAX_MINUTES_SECONDS;
+    }
+
+    if (seconds > COUNTIMER_MAX_MINUTES_SECONDS) {
+        seconds = COUNTIMER_MAX_MINUTES_SECONDS;
+    }
+
+    _currentCountTime = ((hours * 3600L) + (minutes * 60L) + seconds) * 1000L;
+    _countTime = _currentCountTime;
+
+    _startCountTime = _currentCountTime;
+}
+
+void Control::setSpeed(int speed){
+    _vfdSpeed = map(speed, 0, 60, 0,255);
+}
+
+void Control::start(){
+    _isStopped = false;
+    this->relayOn();
+    if(_isCounterCompleted)
+        _isCounterCompleted = false;
+}
+
+void Control::stop(){
+    _isStopped = true;
+    this->relayOff();
+    _isCounterCompleted = true;
+    _currentCountTime = _countTime;
+}
+
+void Control::run(){
+    // timer is running only if is not completed or not stopped.
+    if (_isCounterCompleted || _isStopped)
+        return;
+
+    if (millis() - _previousMillis >= _interval) {
+        countDown();
+        _previousMillis = millis();
+    }
+}
+
+bool Control::isTimerCompleted()
+{
+  return _isCounterCompleted;
+}
+
+bool Control::isStopped()
+{
+  return _isStopped;
+}
+
+void Control::countDown()
+{
+  if (_currentCountTime > 0)
+  {
+    _currentCountTime -= _interval;
   }
   else
   {
-    this->RunRelayOff();
-    state = false;
-    runState = 0;
+    stop();
   }
 }
 
-void RunRelay::UpdateTimer(long time){
-   onTime = time;
+char* Control::getTimeRemaining()
+{
+  sprintf(_formatted_time, "%02d:%02d:%02d", getCurrentHours(), getCurrentMinutes(), getCurrentSeconds());
+  return _formatted_time;
 }
 
-void RunRelay::setRunStopState(int state){
-   runState = state;
+uint16_t Control::getCurrentHours()
+{
+  return _currentCountTime / 1000 / 3600;
 }
 
-void RunRelay::ResetTimer(){
-    unsigned long currentMillisecond = millis();
-    previousMillisecond = currentMillisecond;
-    runState = 0;
+uint8_t Control::getCurrentMinutes()
+{
+  return _currentCountTime / 1000 % 3600 / 60;
 }
 
-void RunRelay::setPwmSpeed(int pwm){
-   pwmSpeed = pwm;
+uint8_t Control::getCurrentSeconds()
+{
+  return _currentCountTime / 1000 % 3600 % 60 % 60;
 }
 
-bool RunRelay::getRunState(){
-   return state;
+void Control::relayOn(){
+  _motorState = true;
+  digitalWrite(_relay, LOW);
+  digitalWrite(_vfd, LOW);
+  analogWrite(_pwm, _vfdSpeed);
 }
-int RunRelay::getSecRemaining(){
-  return secRemaining;
-}
-void RunRelay::updateState(bool stat){
-  state=stat;
-}
-void RunRelay::RunRelayOn(){
-  digitalWrite(relay, LOW);
-  digitalWrite(vfd, LOW);
-}
-void RunRelay::RunRelayOff(){
-  digitalWrite(relay, HIGH);
-  digitalWrite(vfd, HIGH);
-}
-void RunRelay::RunRelayOnWithSpeed(int pin){
-  digitalWrite(relay, LOW);
-  digitalWrite(vfd, LOW);
-  analogWrite(vfdSpeed, pwmSpeed);
-}
-void RunRelay::RunRelayOffWithSpeed(){
-  digitalWrite(relay, HIGH);
-  digitalWrite(vfd, HIGH);
-  analogWrite(vfdSpeed, 0);
+void Control::relayOff(){
+  _motorState = false;
+  digitalWrite(_relay, HIGH);
+  digitalWrite(_vfd, HIGH);
+  analogWrite(_pwm, _vfdSpeed);
 }
 
-void RunRelay::runSpeed(){
-  analogWrite(vfdSpeed, pwmSpeed);
+bool Control::getMotorState(){
+  return _motorState;
 }
 
-void Sensor::update() {
-    // You can handle the debounce of the button directly
-    // in the class, so you don't have to think about it
-    // elsewhere in your code
-    byte newReading = digitalRead(sensor);
-    
-    if (newReading != lastReading) {
-      lastDebounceTime = millis();
-    }
-    if (millis() - lastDebounceTime > debounceDelay) {
-      // Update the 'state' attribute only if debounce is checked
-      state = newReading;
-    }
-    lastReading = newReading;
-}
-
-byte Sensor::getState(){
-  update();
-  return state;
-}
-
-bool Sensor::isPressed() {
-  return (getState() == LOW);
-}
